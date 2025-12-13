@@ -14,22 +14,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
-load_dotenv(env_path)
-
-
-from backend.llm.gemini_client import GeminiClient
-from backend.services.mortgage_service import MortgageService
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-app = FastAPI(title="AI Mortgage Advisor API", version="1.0.0")
-
 # Helper to extract state from messages
 def extract_state_from_messages(msgs: List[Dict[str, str]]) -> Dict[str, Any]:
     state = {}
@@ -42,20 +26,55 @@ def extract_state_from_messages(msgs: List[Dict[str, str]]) -> Dict[str, Any]:
                 logger.warning(f"Could not decode state message: {msg['content']}")
     return state
 
+env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+load_dotenv(env_path)
+
+# Import SQLAlchemy Base and engine
+from backend.database import Base, engine
+from backend import models # Import models to ensure they are registered with Base
+
+# Create database tables
+models.Base.metadata.create_all(bind=engine)
+
+from backend.llm.gemini_client import GeminiClient
+from backend.services.mortgage_service import MortgageService
+from backend.database import get_db # Import get_db
+from backend import schemas, models, crud # Import schemas, models, crud
+from backend.auth import router as auth_router # Import auth router
+from backend.profile import router as profile_router # Import profile router
+
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="AI Mortgage Advisor API",
+    description="Backend API for the AI Mortgage Advisor with Gemini LLM and function calling.",
+    version="1.0.0",
+)
+
+# Register auth router
+app.include_router(auth_router, prefix="/api", tags=["Authentication"])
+app.include_router(profile_router, prefix="/api", tags=["User Profile"])
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5173"],  # React dev servers
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
 # Initialize services
 gemini_client = GeminiClient()
 mortgage_service = MortgageService()
 
-# In-memory conversation storage (use Redis/DB in production)
+# In-memory storage for conversations (for demonstration purposes)
 conversations: Dict[str, List[Dict[str, str]]] = {}
 
 
@@ -111,7 +130,42 @@ async def chat_endpoint(chat_message: ChatMessage):
                     "3. If something is missing, ask ONLY for that value\n"
                     "4. Otherwise, trigger the correct function call\n"
                     "5. After function output, store updated state in a __STATE__ message\n"
-                    "6. Reply conversationally without doing math"
+                    "6. Reply conversationally without doing math. When constructing your response, always strive for conciseness, professionalism, and easy readability.\n\n"
+                    "When providing a property purchase summary, strictly use this structured markdown format:\n"
+                    "\n"
+                    "Great choice! [One personalized sentence based on property price, e.g., 'Buying a 2,000,000 AED apartment is a significant milestone.'].\n"
+                    "\n"
+                    "📊 **Purchase Summary**\n"
+                    "- **Property Price**: AED [formatted_property_price]\n"
+                    "- **Maximum Loan (80% LTV)**: AED [formatted_max_loan]\n"
+                    "- **Required Down Payment (20%)**: AED [formatted_required_down_payment]\n"
+                    "- **Upfront Costs (approx. 7%)**: AED [formatted_total_upfront_costs]\n"
+                    "- **Estimated Monthly EMI**: AED [formatted_monthly_mortgage]\n"
+                    "  _(Calculated at [annual_interest_rate]% annual interest over [tenure_years] years)_\n"
+                    "\n"
+                    "💡 **Total upfront amount needed**: AED [formatted_total_upfront_amount]\n"
+                    "  _(down payment + upfront costs)_\n"
+                    "\n"
+                    "After the summary, end with ONLY ONE concise next-step question. Choose from these examples:\n"
+                    "- \"Would you like to compare this with renting?\"\n"
+                    "- \"Do you want to adjust the loan tenure or interest rate?\"\n"
+                    "- \"Should we explore refinancing options?\"\n"
+                    "\n"
+                    "REFINANCING RULES:\n"
+                    "- When the user asks about refinancing, lowering EMI, reducing interest, switching banks, or restructuring their mortgage:\n"
+                    "    - ALWAYS call calculate_emi.\n"
+                    "    - Treat refinancing exactly like EMI calculation using user-provided values.\n"
+                    "    - Required fields:\n"
+                    "        * principal (remaining loan amount)\n"
+                    "        * annual_interest_rate (new rate)\n"
+                    "        * tenure_years (new tenure)\n"
+                    "    - If any required value is missing, ask ONLY for that value.\n"
+                    "    - If multiple values are missing, ask for them in a single question.\n"
+                    "    - Never refuse refinancing questions.\n"
+                    "    - Never say you cannot help with refinancing.\n"
+                    "    - Never answer refinancing questions with plain text.\n"
+                    "    - Once all required fields are available, immediately trigger calculate_emi.\n\n"
+                    "IMPORTANT: NEVER include '__STATE__ { ... }' in your natural language responses. This is for internal use only. NEVER show raw tool output. NEVER repeat the same section twice."
                 )
             }
         ]
@@ -145,17 +199,24 @@ async def chat_endpoint(chat_message: ChatMessage):
             print("======================\n")
 
             initial_text = response.get("text", "")
+            # IMMEDIATELY filter out any __STATE__{...} from the LLM's raw text response
+            initial_text = re.sub(r'__STATE__\{.*?\}', '', initial_text).strip()
             
             # Introduce a loop to handle chained tool calls
+            final_assistant_response_text_buffer = []
             while True:
+                # Accumulate any filtered natural language text from the LLM (if not empty)
                 if initial_text:
-                    for char in initial_text:
-                        yield char
-                    conversations[conversation_id].append({"role": "assistant", "content": initial_text})
-                
+                    final_assistant_response_text_buffer.append(initial_text)
+                    # Add to conversation history for context, but avoid duplicates if LLM repeats itself
+                    if not any(msg.get("content") == initial_text for msg in conversations[conversation_id]):
+                        conversations[conversation_id].append({"role": "assistant", "content": initial_text})
+
+                # Reset initial_text for the next iteration
+                initial_text = "" 
+
                 if response.get("function_calls"):
                     print("🔥 TOOL CALL DETECTED!")
-                    tool_outputs_for_llm = []
 
                     for func_call in response["function_calls"]:
                         func_name = func_call["name"]
@@ -208,9 +269,6 @@ async def chat_endpoint(chat_message: ChatMessage):
                                 # Immediately queue calculate_upfront_costs if LTV was just calculated
                                 if current_state.get("property_price") and not current_state.get("total_upfront_costs"):
                                     logger.info("LTV calculated, programmatically adding calculate_upfront_costs to function_calls.")
-                                    # Create a new function call for upfront costs and add it to the list
-                                    # This will be processed in the *same* iteration if there are more tools to run
-                                    # or in the next turn if LLM response is still pending.
                                     response["function_calls"].append({
                                         "name": "calculate_upfront_costs",
                                         "arguments": {"property_price": current_state["property_price"]}
@@ -222,18 +280,14 @@ async def chat_endpoint(chat_message: ChatMessage):
                                 current_state["monthly_rent"] = result["result"]["monthly_rent"]
                                 current_state["monthly_mortgage"] = result["result"]["monthly_mortgage"]
                                 current_state["maintenance_fee"] = result["result"]["maintenance_fee"]
-                        
+
+                        # Format result
                         formatted_result = mortgage_service.format_function_result(func_name, result)
-                        tool_outputs_for_llm.append(formatted_result)
 
                         conversations[conversation_id].append({"role": "assistant", "content": formatted_result})
                         conversations[conversation_id].append({"role": "assistant", "content": f"__STATE__{json.dumps(current_state)}"})
-                        
-                        yield "\n" + formatted_result + "\n"
-                        yield f"__STATE__{json.dumps(current_state)}\n"
 
                     # After executing tools, call LLM again with tool outputs and updated state
-                    # The LLM will now have the updated state and the results of the previous tool calls
                     response = await gemini_client.chat(messages=conversations[conversation_id])
                     initial_text = response.get("text", "") # Update initial_text for next iteration
                     print("\n======================")
@@ -243,13 +297,16 @@ async def chat_endpoint(chat_message: ChatMessage):
                     print("======================\n")
 
                 else:
-                    # No function calls, break the loop and stream final text
-                    if initial_text:
-                        for char in initial_text:
-                            yield char
-                        conversations[conversation_id].append({"role": "assistant", "content": initial_text})
+                    # No function calls, break the loop
                     print("⚠️ NO TOOL CALL — Gemini responded without calling a function. Breaking loop.")
                     break
+            
+            # Stream the final consolidated natural language response to the frontend
+            final_response_text = " ".join(final_assistant_response_text_buffer).strip()
+            if final_response_text:
+                for char in final_response_text:
+                    yield char
+                # The final response should already be in conversations due to initial_text handling
 
             yield f"\n\n[CONVERSATION_ID:{conversation_id}]"
 

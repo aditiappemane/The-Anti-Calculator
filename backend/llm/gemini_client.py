@@ -173,7 +173,12 @@ class GeminiClient:
                 history=formatted_messages[:-1] if len(formatted_messages) > 1 else []
             )
 
-            last_user_message = formatted_messages[-1]["parts"][0]
+            last_user_message = formatted_messages[-1]["parts"][0] if formatted_messages else ""
+            if not isinstance(last_user_message, str):
+                # Handle cases where last_user_message might be a Part object if function_calling
+                # This is a defensive check, typically it should be a string here
+                logger.warning(f"last_user_message is not a string, type: {type(last_user_message)}")
+                last_user_message = str(last_user_message) # Convert to string defensively
 
             stream = chat.send_message(last_user_message, stream=True)
 
@@ -182,10 +187,10 @@ class GeminiClient:
             async for chunk in stream:
                 if chunk.candidates:
                     for part in chunk.candidates[0].content.parts:
+                        if hasattr(part, "text") and part.text:
+                            yield part.text
                         if hasattr(part, "function_call") and part.function_call:
                             function_calls.append(part.function_call)
-                        elif hasattr(part, "text") and part.text:
-                            yield part.text
             
             # If function calls were made, yield a special marker
             if function_calls:
@@ -202,5 +207,5 @@ class GeminiClient:
                 yield f"\n\n[FUNCTION_CALLS:{json.dumps(formatted_function_calls)}]\n\n"
 
         except Exception as e:
-            logger.error("Streaming error:", exc_info=True)
-            yield "Streaming failed."
+            logger.error(f"Streaming error in Gemini client: {e}", exc_info=True)
+            yield f"Streaming failed due to an internal error: {e}"

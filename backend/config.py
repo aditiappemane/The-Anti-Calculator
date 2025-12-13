@@ -3,6 +3,21 @@ Configuration constants for the mortgage advisor.
 These are domain constants that should NEVER be changed.
 """
 
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+load_dotenv(env_path)
+
+# Database Settings
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
+
+# JWT Settings
+SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-jwt-key")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30  # 30 minutes
+
 # Maximum Loan-to-Value ratio (as percentage)
 MAX_LTV = 80.0
 

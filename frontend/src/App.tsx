@@ -1,196 +1,252 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Message, ConversationState, LeadCaptureForm } from './types';
-import { ChatMessageComponent } from './components/ChatMessage';
-import { ChatInput } from './components/ChatInput';
-import { LoadingIndicator } from './components/LoadingIndicator';
-import { LeadCaptureFormComponent } from './components/LeadCaptureForm';
-import { chatApi } from './services/api';
+import { useState, useEffect, useRef } from 'react';
+import { Route, Routes, Navigate } from 'react-router-dom';
+import ChatMessage from './components/ChatMessage';
+import ChatInput from './components/ChatInput';
+import LoadingIndicator from './components/LoadingIndicator';
+import LeadCaptureForm from './components/LeadCaptureForm';
+import { chatStream, getConversationHistory } from './services/api';
+import { useAuth } from './contexts/AuthContext';
+import LoginPage from './pages/LoginPage';
+import SignupPage from './pages/SignupPage';
+import ProfilePage from './pages/ProfilePage';
+
+interface Message {
+  id: number;
+  text: string;
+  sender: 'user' | 'ai';
+  timestamp: string;
+}
+
+interface ProtectedRouteProps {
+  children: React.ReactNode;
+}
+
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
+  const { token, loading } = useAuth();
+
+  if (loading) {
+    return <LoadingIndicator />;
+  }
+
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+};
 
 function App() {
-  const [state, setState] = useState<ConversationState>({
-    conversationId: null,
-    messages: [],
-    isLoading: false,
-    showLeadForm: false,
-  });
-
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [showLeadForm, setShowLeadForm] = useState(false);
+  const { user, token } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [state.messages, state.isLoading]);
+    const storedConversationId = localStorage.getItem('conversationId');
+    if (storedConversationId) {
+      setConversationId(storedConversationId);
+      loadConversationHistory(storedConversationId);
+    } else {
+      // Initialize with a welcome message if no conversation history
+      setMessages([
+        {
+          id: 0,
+          text: "Hello! I'm your AI Mortgage Advisor. How can I help you today with buying, renting, or refinancing in the UAE?",
+          sender: 'ai',
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    }
+  }, []);
 
-  const addMessage = (content: string, role: 'user' | 'assistant') => {
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      role,
-      content,
-      timestamp: new Date(),
-    };
-    setState((prev) => ({
-      ...prev,
-      messages: [...prev.messages, newMessage],
-    }));
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const loadConversationHistory = async (id: string) => {
+    try {
+      const response = await getConversationHistory(id);
+      const historyMessages = response.messages; // Access the messages array
+      const formattedMessages: Message[] = historyMessages.map((msg: any, index: number) => ({
+        id: index,
+        text: msg.content,
+        sender: msg.role === 'user' ? 'user' : 'ai',
+        timestamp: new Date().toISOString(), // Use actual timestamp if available
+      }));
+      setMessages(formattedMessages);
+    } catch (error: any) {
+      console.error('Failed to load conversation history:', error);
+      // If conversation not found (e.g., backend restarted), clear local storage and start fresh
+      if (error.response && error.response.status === 404) {
+        localStorage.removeItem('conversationId');
+        setConversationId(null);
+        setMessages([
+          {
+            id: 0,
+            text: "Hello! I'm your AI Mortgage Advisor. How can I help you today with buying, renting, or refinancing in the UAE?",
+            sender: 'ai',
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+      } else {
+        // For other errors, display a generic message
+        setMessages([
+          {
+            id: 0,
+            text: 'Failed to load conversation history. Please try refreshing.',
+            sender: 'ai',
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+      }
+    }
   };
 
-  const handleSendMessage = async (message: string) => {
-    // Add user message immediately
-    addMessage(message, 'user');
-    setState((prev) => ({ ...prev, isLoading: true }));
+  const sendMessage = async () => {
+    if (input.trim() === '') return;
+
+    const newMessage: Message = {
+      id: messages.length,
+      text: input,
+      sender: 'user',
+      timestamp: new Date().toISOString(),
+    };
+    setMessages((prevMessages) => [...prevMessages, newMessage]);
+    setInput('');
+    setLoading(true);
+
+    let aiResponseText = '';
+    let newConversationId: string | null = conversationId;
+    let isFirstAiChunk = true;
+    const decoder = new TextDecoder("utf-8");
 
     try {
-      // Create abort controller for cancellation
-      abortControllerRef.current = new AbortController();
+      console.log("Attempting to connect to chatStream...");
+      const reader = await chatStream(input, conversationId);
+      console.log("Connected to chatStream. Starting to read chunks...");
 
-      const response = await chatApi.sendMessage(
-        message,
-        state.conversationId
-      );
+      while (true) {
+        const { value, done } = await reader.read();
+        console.log("Raw chunk received:", value);
 
-      // Extract conversation ID from headers if new conversation
-      const conversationId =
-        response.headers.get('X-Conversation-ID') || state.conversationId;
+        if (done) {
+          console.log("Stream finished.");
+          break;
+        }
 
-      if (conversationId && !state.conversationId) {
-        setState((prev) => ({ ...prev, conversationId }));
-      }
+        const chunk = decoder.decode(value, { stream: true });
+        console.log("Decoded chunk:", chunk);
 
-      // Stream the response
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let assistantMessage = '';
-      let messageId = Date.now().toString();
+        let processedChunk = chunk.replace(/__STATE__\{.*?\}/g, '').trim();
+        console.log("Processed chunk (after STATE filter and trim):", processedChunk);
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        // Check for CONVERSATION_ID marker first, as it's critical and should not be part of chat text
+        const convIdMatch = processedChunk.match(/\[CONVERSATION_ID:(.*?)\]/);
+        if (convIdMatch) {
+          newConversationId = convIdMatch[1];
+          setConversationId(newConversationId);
+          localStorage.setItem('conversationId', newConversationId);
+          console.log("Conversation ID updated:", newConversationId);
+          // Remove the CONVERSATION_ID part from the chunk before processing as text
+          processedChunk = processedChunk.replace(convIdMatch[0], '').trim();
+        }
 
-          const chunk = decoder.decode(value, { stream: true });
-          assistantMessage += chunk;
+        // Check for FUNCTION_CALLS marker
+        const functionCallMatch = processedChunk.match(/\[FUNCTION_CALLS:(.*?)\]/);
+        if (functionCallMatch) {
+          try {
+            const calls = JSON.parse(functionCallMatch[1]);
+            console.log("Function calls detected:", calls);
+          } catch (jsonError) {
+            console.error("Error parsing FUNCTION_CALLS JSON:", jsonError, "Chunk part:", functionCallMatch[1]);
+          }
+          // Remove the FUNCTION_CALLS part from the chunk before processing as text
+          processedChunk = processedChunk.replace(functionCallMatch[0], '').trim();
+        }
 
-          // Update the last message or create new one
-          setState((prev) => {
-            const lastMessage = prev.messages[prev.messages.length - 1];
-            if (lastMessage && lastMessage.role === 'assistant' && lastMessage.id === messageId) {
-              // Update existing streaming message
-              const updatedMessages = [...prev.messages];
-              updatedMessages[updatedMessages.length - 1] = {
-                ...lastMessage,
-                content: assistantMessage,
-              };
-              return { ...prev, messages: updatedMessages };
-            } else {
-              // Create new assistant message
-              return {
-                ...prev,
-                messages: [
-                  ...prev.messages,
-                  {
-                    id: messageId,
-                    role: 'assistant',
-                    content: assistantMessage,
-                    timestamp: new Date(),
-                  },
-                ],
-              };
+        // Only proceed if there's actual text content to display
+        if (processedChunk) {
+          aiResponseText += processedChunk + " "; // Add a space to prevent words from merging if chunks split words
+          console.log("Accumulated AI Response Text:", aiResponseText);
+
+          setMessages((prevMessages) => {
+            const lastMessage = prevMessages[prevMessages.length - 1];
+
+            // If it's the first chunk for an AI message (or previous was user's), create new entry
+            if (isFirstAiChunk || (lastMessage && lastMessage.sender === 'user')) {
+              isFirstAiChunk = false; // Now we're past the first chunk
+              return [
+                ...prevMessages,
+                {
+                  id: prevMessages.length,
+                  text: aiResponseText.trim(), // Trim final text before setting
+                  sender: 'ai',
+                  timestamp: new Date().toISOString(),
+                },
+              ];
+            } else if (lastMessage && lastMessage.sender === 'ai') {
+              // Otherwise, update the existing last AI message by appending to its text
+              return prevMessages.map((msg, index) =>
+                index === prevMessages.length - 1 ? { ...msg, text: aiResponseText.trim() } : msg
+              );
             }
+            return prevMessages; // Should not happen in normal flow if processedChunk is not empty
           });
         }
-      }
-
-      // Check for conversation ID in the message
-      if (assistantMessage.includes('[CONVERSATION_ID:')) {
-        const match = assistantMessage.match(/\[CONVERSATION_ID:([^\]]+)\]/);
-        if (match && match[1]) {
-          const extractedId = match[1];
-          setState((prev) => ({
-            ...prev,
-            conversationId: extractedId,
-          }));
-          // Remove the marker from the message
-          assistantMessage = assistantMessage.replace(
-            /\[CONVERSATION_ID:[^\]]+\]/g,
-            ''
-          );
-          setState((prev) => {
-            const updatedMessages = [...prev.messages];
-            const lastMessage = updatedMessages[updatedMessages.length - 1];
-            if (lastMessage) {
-              lastMessage.content = assistantMessage;
-            }
-            return { ...prev, messages: updatedMessages };
-          });
-        }
-      }
-
-      // Show lead form after a helpful conversation
-      if (
-        assistantMessage.length > 100 &&
-        (assistantMessage.toLowerCase().includes('contact') ||
-          assistantMessage.toLowerCase().includes('assistance') ||
-          assistantMessage.toLowerCase().includes('help'))
-      ) {
-        setTimeout(() => {
-          setState((prev) => ({ ...prev, showLeadForm: true }));
-        }, 2000);
       }
     } catch (error) {
-      console.error('Error sending message:', error);
-      addMessage(
-        'Sorry, I encountered an error. Please try again.',
-        'assistant'
-      );
+      console.error('Error during chat streaming (frontend):', error);
+      // Ensure the error message is added only once if streaming fails
+      if (!messages.some(msg => msg.sender === 'ai' && msg.text.includes('Sorry, I encountered an error.'))) {
+        setMessages((prevMessages) => [
+          ...prevMessages,
+          {
+            id: prevMessages.length,
+            text: 'Sorry, I encountered an error. Please try again.',
+            sender: 'ai',
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+      }
     } finally {
-      setState((prev) => ({ ...prev, isLoading: false }));
-      abortControllerRef.current = null;
+      setLoading(false);
+      // Optionally, show lead form after a successful conversation
+      // setShowLeadForm(true);
     }
   };
 
-  const handleLeadSubmit = async (form: LeadCaptureForm) => {
-    if (!state.conversationId) {
-      throw new Error('No conversation ID available');
-    }
-
-    await chatApi.captureLead({
-      conversation_id: state.conversationId,
-      ...form,
-    });
-
-    setState((prev) => ({ ...prev, showLeadForm: false }));
-    addMessage(
-      'Thank you! We have received your information and will be in touch soon.',
-      'assistant'
-    );
-  };
-
-  const handleLeadCancel = () => {
-    setState((prev) => ({ ...prev, showLeadForm: false }));
-  };
-
-  return (
+  // Main chat UI rendered if authenticated
+  const chatUI = (
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            🏠 AI Mortgage Advisor - UAE
-          </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Get expert advice on buying vs renting, and mortgage refinancing
-          </p>
+      <div className="flex-shrink-0 bg-white dark:bg-gray-800 shadow-md p-4 flex items-center justify-between">
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white">AI Mortgage Advisor</h1>
+        <div className="flex space-x-4">
+          {token && (
+            <a href="/profile" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-600">
+              Profile
+            </a>
+          )}
+          {!token && (
+            <a href="/login" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-600">
+              Login
+            </a>
+          )}
+          {user && (
+            <a href="/" onClick={useAuth().logout} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-600">
+              Logout
+            </a>
+          )}
         </div>
-      </header>
+      </div>
 
       {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="max-w-4xl mx-auto">
-          {state.messages.length === 0 && (
+          {messages.length === 0 && (
             <div className="text-center mt-12">
               <div className="text-6xl mb-4">🏠</div>
               <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
@@ -214,30 +270,54 @@ function App() {
             </div>
           )}
 
-          {state.messages.map((message) => (
-            <ChatMessageComponent key={message.id} message={message} />
+          {messages.map((message) => (
+            <ChatMessage key={message.id} message={message.text} sender={message.sender} timestamp={message.timestamp} />
           ))}
 
-          {state.isLoading && <LoadingIndicator />}
+          {loading && <LoadingIndicator />}
           <div ref={messagesEndRef} />
         </div>
       </div>
 
       {/* Chat Input */}
-      <ChatInput
-        onSendMessage={handleSendMessage}
-        disabled={state.isLoading}
-      />
+      <div className="flex-shrink-0 p-4 bg-white dark:bg-gray-800 shadow-md">
+        <ChatInput onSendMessage={sendMessage} input={input} setInput={setInput} isLoading={loading} />
+      </div>
 
-      {/* Lead Capture Form Modal */}
-      {state.showLeadForm && state.conversationId && (
-        <LeadCaptureFormComponent
-          conversationId={state.conversationId}
-          onSubmit={handleLeadSubmit}
-          onCancel={handleLeadCancel}
+      {/* Lead Capture Form */}
+      {showLeadForm && conversationId && (
+        <LeadCaptureForm
+          conversationId={conversationId}
+          onClose={() => setShowLeadForm(false)}
+          onLeadCaptured={() => console.log('Lead captured!')}
         />
       )}
     </div>
+  );
+
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignupPage />} />
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute>
+            <ProfilePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/chat"
+        element={
+          <ProtectedRoute>
+            {chatUI}
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/" element={<Navigate to="/chat" replace />} /> {/* Default redirect to chat */}
+      <Route path="*" element={<Navigate to="/chat" replace />} /> {/* Catch-all redirect */}
+    </Routes>
   );
 }
 

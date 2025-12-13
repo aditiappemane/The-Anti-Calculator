@@ -4,6 +4,8 @@ A production-grade conversational AI agent that helps users decide whether to bu
 
 ## 🎯 Features
 
+- **User Authentication**: Secure Login and Signup for personalized experience
+- **User Profile Management**: Dedicated page to manage user details and documents
 - **Conversational AI Interface**: ChatGPT-like UI with streaming responses
 - **Deterministic Calculations**: All math is performed by backend functions (LLM never does math)
 - **Function Calling**: Gemini LLM uses function calling to invoke backend calculations
@@ -27,7 +29,11 @@ A production-grade conversational AI agent that helps users decide whether to bu
 ├── backend/
 │   ├── __init__.py
 │   ├── main.py                 # FastAPI application
-│   ├── config.py               # Domain constants
+│   ├── auth.py                 # Authentication routes (login, signup, token)
+│   ├── models.py               # Database models (User, Document)
+│   ├── crud.py                 # CRUD operations for database
+│   ├── schemas.py              # Pydantic schemas for data validation
+│   ├── config.py               # Domain constants and general settings
 │   ├── utils/
 │   │   ├── __init__.py
 │   │   └── math_utils.py      # Deterministic math functions
@@ -39,10 +45,12 @@ A production-grade conversational AI agent that helps users decide whether to bu
 │       └── mortgage_service.py # Business logic layer
 ├── frontend/
 │   ├── src/
-│   │   ├── components/        # React components
+│   │   ├── assets/              # Static assets
+│   │   ├── components/        # Reusable React components
+│   │   ├── pages/               # Login, Signup, Profile, Chat pages
 │   │   ├── services/          # API service layer
 │   │   ├── types/             # TypeScript interfaces
-│   │   ├── App.tsx            # Main app component
+│   │   ├── App.tsx            # Main app component with routing
 │   │   └── main.tsx           # Entry point
 │   ├── package.json
 │   └── vite.config.ts
@@ -58,6 +66,7 @@ A production-grade conversational AI agent that helps users decide whether to bu
 - Python 3.9+
 - Node.js 18+
 - Gemini API Key ([Get one here](https://makersuite.google.com/app/apikey))
+- Docker (recommended for database setup)
 
 ### Backend Setup
 
@@ -94,7 +103,10 @@ A production-grade conversational AI agent that helps users decide whether to bu
    HOST=0.0.0.0
    ```
 
-6. **Run the backend server**:
+7. **Database Setup**:
+   For local development, we'll use SQLite. No separate setup is required initially, but the database file will be created when you run the FastAPI application.
+
+8. **Run the backend server**:
    ```bash
    python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
    ```
@@ -127,8 +139,16 @@ A production-grade conversational AI agent that helps users decide whether to bu
 
 ## 📡 API Endpoints
 
-### POST `/api/chat`
-Send a chat message and receive a streaming response.
+### Authentication
+- **POST `/api/signup`**: Register a new user.
+- **POST `/api/login`**: Authenticate user and get JWT token.
+- **GET `/api/profile`**: Get user profile (requires authentication).
+- **PUT `/api/profile`**: Update user profile (requires authentication).
+- **POST `/api/profile/documents`**: Upload user documents (requires authentication).
+- **GET `/api/profile/documents`**: Get list of user documents (requires authentication).
+
+### Chat
+- **POST `/api/chat`**: Send a chat message and receive a streaming response.
 
 **Request Body**:
 ```json
@@ -174,6 +194,9 @@ Compares renting vs buying costs and provides recommendation.
 
 ## 🎨 Frontend Features
 
+- **User Authentication**: Login and Signup pages
+- **User Profile**: Dedicated page for user details and document uploads
+- **Protected Routes**: AI Advisor chat and profile accessible only after login
 - **Streaming Chat Interface**: Real-time message streaming
 - **Message History**: Persistent conversation state
 - **Loading Indicators**: Visual feedback during API calls
@@ -213,6 +236,20 @@ print(f"Max Loan: AED {ltv['max_loan']}, Down Payment: AED {ltv['required_down_p
 - Implement rate limiting for production
 - Add authentication/authorization for production use
 - Use a proper database instead of in-memory storage for conversations
+
+## ⚠️ Production Considerations
+
+1. Replace in-memory conversation storage with database
+2. Add authentication/authorization
+3. Implement rate limiting for all endpoints
+4. Add monitoring and logging (e.g., Sentry)
+5. Use environment-specific configurations
+6. Add unit and integration tests
+7. Set up CI/CD pipeline
+8. Use HTTPS in production
+9. Add input validation and sanitization
+10. Implement proper error tracking
+11. Implement file storage for user documents (e.g., S3, Google Cloud Storage)
 
 ## 🚧 Production Deployment
 

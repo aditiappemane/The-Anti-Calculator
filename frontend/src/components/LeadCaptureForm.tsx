@@ -1,137 +1,100 @@
 import React, { useState } from 'react';
-import { LeadCaptureForm } from '../types';
 
 interface LeadCaptureFormProps {
   conversationId: string;
-  onSubmit: (form: LeadCaptureForm) => Promise<void>;
-  onCancel: () => void;
+  onClose: () => void;
+  onLeadCaptured: () => void;
 }
 
-export const LeadCaptureFormComponent: React.FC<LeadCaptureFormProps> = ({
-  conversationId,
-  onSubmit,
-  onCancel,
-}) => {
-  const [form, setForm] = useState<LeadCaptureForm>({
-    name: '',
-    email: '',
-    phone: '',
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+const LeadCaptureForm: React.FC<LeadCaptureFormProps> = ({ conversationId, onClose, onLeadCaptured }) => {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     setError(null);
+    setSuccess(null);
 
-    if (!form.name.trim() || !form.email.trim()) {
-      setError('Name and email are required');
-      return;
-    }
-
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(form.email)) {
-      setError('Please enter a valid email address');
-      return;
-    }
-
-    setIsSubmitting(true);
     try {
-      await onSubmit(form);
-    } catch (err) {
-      setError('Failed to submit. Please try again.');
-      console.error(err);
+      await captureLead({
+        conversation_id: conversationId,
+        name,
+        email,
+        phone,
+      });
+      setSuccess('Thank you! We\'ll be in touch shortly.');
+      onLeadCaptured();
+      setTimeout(onClose, 2000); // Close form after a delay
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to capture lead. Please try again.');
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 animate-fade-in">
-        <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-gray-100">
-          Get Personalized Assistance
-        </h2>
-        <p className="text-gray-600 dark:text-gray-400 mb-6">
-          Provide your contact information and we'll connect you with a mortgage expert.
-        </p>
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 dark:bg-gray-900 dark:bg-opacity-80 flex justify-center items-center z-50">
+      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-md mx-4">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Get Personalized Advice</h2>
+        <p className="text-gray-600 dark:text-gray-300 mb-4">Leave your details and our expert advisors will contact you.</p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="name"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-            >
-              Name *
-            </label>
+        {error && <p className="text-red-500 text-center mb-4">{error}</p>}
+        {success && <p className="text-green-500 text-center mb-4">{success}</p>}
+
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label htmlFor="name" className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Name</label>
             <input
               type="text"
               id="name"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white dark:border-gray-600"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               required
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-gray-100"
-              placeholder="Your full name"
             />
           </div>
-
-          <div>
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-            >
-              Email *
-            </label>
+          <div className="mb-4">
+            <label htmlFor="email" className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Email</label>
             <input
               type="email"
               id="email"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white dark:border-gray-600"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-gray-100"
-              placeholder="your.email@example.com"
             />
           </div>
-
-          <div>
-            <label
-              htmlFor="phone"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-            >
-              Phone (Optional)
-            </label>
+          <div className="mb-6">
+            <label htmlFor="phone" className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Phone</label>
             <input
               type="tel"
               id="phone"
-              value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-gray-100"
-              placeholder="+971 XX XXX XXXX"
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white dark:border-gray-600"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              required
             />
           </div>
-
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-red-700 dark:text-red-400 text-sm">
-              {error}
-            </div>
-          )}
-
-          <div className="flex space-x-3 pt-2">
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={isSubmitting}
-              className="flex-1 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-            >
-              Cancel
-            </button>
+          <div className="flex items-center justify-between">
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="flex-1 bg-primary-600 hover:bg-primary-700 text-white rounded-lg px-4 py-2 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline dark:bg-blue-600 dark:hover:bg-blue-800"
+              disabled={loading}
             >
-              {isSubmitting ? 'Submitting...' : 'Submit'}
+              {loading ? 'Submitting...' : 'Submit'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-block align-baseline font-bold text-sm text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-600"
+              disabled={loading}
+            >
+              No, thanks
             </button>
           </div>
         </form>
@@ -139,4 +102,6 @@ export const LeadCaptureFormComponent: React.FC<LeadCaptureFormProps> = ({
     </div>
   );
 };
+
+export default LeadCaptureForm;
 
