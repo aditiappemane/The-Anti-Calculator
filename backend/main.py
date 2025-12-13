@@ -6,6 +6,7 @@ import os
 import json
 import logging
 import uuid
+import re # Import re for regex operations
 from typing import Dict, List, Optional, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +29,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Mortgage Advisor API", version="1.0.0")
+
+# Helper to extract state from messages
+def extract_state_from_messages(msgs: List[Dict[str, str]]) -> Dict[str, Any]:
+    state = {}
+    for msg in msgs:
+        if msg["role"] == "assistant" and msg["content"].startswith("__STATE__{"):
+            try:
+                state_str = msg["content"].replace("__STATE__", "")
+                state.update(json.loads(state_str))
+            except json.JSONDecodeError:
+                logger.warning(f"Could not decode state message: {msg['content']}")
+    return state
 
 # CORS middleware
 app.add_middleware(
@@ -67,18 +80,6 @@ async def root():
 @app.post("/api/chat")
 async def chat_endpoint(chat_message: ChatMessage):
     conversation_id = chat_message.conversation_id or str(uuid.uuid4())
-
-    # Helper to extract state from messages
-    def extract_state_from_messages(msgs: List[Dict[str, str]]) -> Dict[str, Any]:
-        state = {}
-        for msg in msgs:
-            if msg["role"] == "assistant" and msg["content"].startswith("__STATE__{"):
-                try:
-                    state_str = msg["content"].replace("__STATE__", "")
-                    state.update(json.loads(state_str))
-                except json.JSONDecodeError:
-                    logger.warning(f"Could not decode state message: {msg['content']}")
-        return state
 
     # Initialize conversation
     if conversation_id not in conversations:
@@ -158,7 +159,8 @@ async def chat_endpoint(chat_message: ChatMessage):
 
                     for func_call in response["function_calls"]:
                         func_name = func_call["name"]
-                        func_args = func_call["arguments"]
+                        # Convert func_args from MapComposite to dict
+                        func_args = dict(func_call["arguments"])
 
                         # Apply defaults and state to missing arguments
                         if func_name == "calculate_emi":
@@ -171,6 +173,15 @@ async def chat_endpoint(chat_message: ChatMessage):
                         elif func_name == "calculate_upfront_costs":
                             if "property_price" not in func_args and "property_price" in current_state:
                                 func_args["property_price"] = current_state["property_price"]
+                            elif "property_price" not in func_args and func_name == "calculate_upfront_costs":
+                                # Attempt to extract property_price from current user message if not in args or state
+                                last_user_content = conversations[conversation_id][-1]["content"].lower()
+                                match = re.search(r'(\d+(?:\.\d+)?)\s*m(?:illion)?', last_user_content)
+                                if match:
+                                    price_million = float(match.group(1))
+                                    func_args["property_price"] = price_million * 1_000_000
+                                    logger.info(f"Extracted property_price from message: {func_args['property_price']}")
+
                         elif func_name == "rent_vs_buy":
                             if "monthly_rent" not in func_args and "monthly_rent" in current_state:
                                 func_args["monthly_rent"] = current_state["monthly_rent"]
@@ -192,7 +203,19 @@ async def chat_endpoint(chat_message: ChatMessage):
                             elif func_name == "calculate_ltv":
                                 current_state["max_loan"] = result["result"]["max_loan"]
                                 current_state["required_down_payment"] = result["result"]["required_down_payment"]
-                                current_state["property_price"] = func_args.get("property_price")
+                                current_state["property_price"] = func_args.get("property_price") # Store the input property price
+
+                                # Immediately queue calculate_upfront_costs if LTV was just calculated
+                                if current_state.get("property_price") and not current_state.get("total_upfront_costs"):
+                                    logger.info("LTV calculated, programmatically adding calculate_upfront_costs to function_calls.")
+                                    # Create a new function call for upfront costs and add it to the list
+                                    # This will be processed in the *same* iteration if there are more tools to run
+                                    # or in the next turn if LLM response is still pending.
+                                    response["function_calls"].append({
+                                        "name": "calculate_upfront_costs",
+                                        "arguments": {"property_price": current_state["property_price"]}
+                                    })
+
                             elif func_name == "calculate_upfront_costs":
                                 current_state["total_upfront_costs"] = result["result"]["total_upfront_costs"]
                             elif func_name == "rent_vs_buy":
@@ -210,7 +233,7 @@ async def chat_endpoint(chat_message: ChatMessage):
                         yield f"__STATE__{json.dumps(current_state)}\n"
 
                     # After executing tools, call LLM again with tool outputs and updated state
-                    # No need to inject state again here, as it's already in conversations
+                    # The LLM will now have the updated state and the results of the previous tool calls
                     response = await gemini_client.chat(messages=conversations[conversation_id])
                     initial_text = response.get("text", "") # Update initial_text for next iteration
                     print("\n======================")
