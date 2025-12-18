@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from passlib.context import CryptContext
 from typing import List, Optional
+from . import models
 
 from backend import models, schemas
 
@@ -97,3 +98,13 @@ def delete_user_document(db: Session, document_id: int) -> Optional[models.UserD
     db.delete(db_document)
     db.commit()
     return db_document
+
+def get_user_documents_by_owner_id(db: Session, owner_id: int, limit: int = 1):
+    return (
+        db.query(models.UserDocument)
+        .filter(models.UserDocument.owner_id == owner_id)
+        .order_by(models.UserDocument.uploaded_at.desc())
+        .limit(limit)
+        .all()
+    )
+
