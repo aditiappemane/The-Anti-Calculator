@@ -19,7 +19,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, sender, timestamp })
           : 'bg-gray-300 text-gray-900 dark:bg-gray-700 dark:text-gray-200' // Changed text-gray-800 to text-gray-900 for darker text
         }`}
       >
-        <p className="text-sm mb-1">{message}</p>
+        <pre className="text-sm mb-1 whitespace-pre-wrap font-sans">
+          {message}
+        </pre>
         <span className={`text-xs ${isUser ? 'text-blue-200' : 'text-gray-500 dark:text-gray-400'}`}>
           {formattedTime}
         </span>

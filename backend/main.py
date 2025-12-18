@@ -29,6 +29,83 @@ def extract_state_from_messages(messages):
     return state
 
 
+def build_rent_vs_buy_narrative(data: Dict[str, Any], current_state: Dict[str, Any]) -> str:
+    """
+    Builds a Founder-level plain-text narrative for the Rent vs. Buy comparison.
+    """
+    recommendation_str = data['recommendation'].upper()
+
+    # Calculate 5-year costs
+    five_year_rent_cost = data['annual_rent'] * 5
+    five_year_buying_cost = data['annual_buying'] * 5
+
+    # Get monthly income for affordability context
+    monthly_income = current_state.get('monthly_income', 0.0)
+
+    # Determine which is greater for the bar chart
+    max_5_year_cost = max(five_year_rent_cost, five_year_buying_cost)
+    # Scale bar chart to a maximum length of 40 characters for readability
+    bar_chart_length = 40
+    if max_5_year_cost > 0:
+        bar_chart_scale = bar_chart_length / max_5_year_cost
+    else:
+        bar_chart_scale = 0 # Avoid division by zero
+
+    rent_bar = "█" * int(five_year_rent_cost * bar_chart_scale)
+    buy_bar = "█" * int(five_year_buying_cost * bar_chart_scale)
+
+    # Determine recommendation phrasing
+    recommendation_phrase = ""
+    if recommendation_str == "RENT":
+        recommendation_phrase = "Renting is the more financially prudent option right now."
+        decision_comparison = f"You would save approximately AED {abs(data['monthly_difference']):,.2f} per month by choosing to rent."
+    else:
+        recommendation_phrase = "Buying is the more financially prudent option right now."
+        decision_comparison = f"You would save approximately AED {abs(data['monthly_difference']):,.2f} per month by choosing to buy."
+
+    narrative_lines = [
+        "Rent vs Buy — A Clear, No-Nonsense Breakdown",
+        "",
+        "Let’s compare the real money impact of renting versus buying based on your situation.",
+        "",
+        "Renting",
+        f"Monthly rent: AED {data['monthly_rent']:,.2f}",
+        f"Annual rent: AED {data['annual_rent']:,.2f}",
+        f"5-year cost: AED {five_year_rent_cost:,.2f}",
+        "This money is paid to a landlord and builds zero equity.",
+        "",
+        "Buying",
+        f"Monthly mortgage: AED {data['monthly_mortgage']:,.2f}",
+        f"Maintenance: AED {data['maintenance_fee']:,.2f}",
+        f"Total monthly buying cost: AED {data['total_monthly_buying']:,.2f}",
+        f"Monthly income: AED {monthly_income:,.2f}",
+        "Buying consumes a significant portion of cash flow.",
+        "",
+        "5-Year Cash Outflow Comparison",
+        f"Renting: {rent_bar}",
+        f"Buying:  {buy_bar}",
+        "",
+        "Recommendation",
+    ]
+
+    if recommendation_str == "RENT":
+        narrative_lines.append(f"Renting is the more financially prudent option today.")
+        narrative_lines.append(f"Monthly difference: AED {abs(data['monthly_difference']):,.2f} saved by renting.")
+    else:
+        narrative_lines.append(f"Buying is the more financially prudent option today.")
+        narrative_lines.append(f"Monthly difference: AED {abs(data['monthly_difference']):,.2f} saved by buying.")
+
+    narrative_lines.extend([
+        "",
+        "Next Steps",
+        "Explore a lower property price",
+        "Adjust interest rate or tenure",
+        "Analyze investment options for saved cash",
+    ])
+
+    narrative = "\n".join(narrative_lines)
+    return narrative
+
 env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
 load_dotenv(env_path)
 
@@ -441,51 +518,30 @@ async def chat_endpoint(chat_message: ChatMessage, current_user: schemas.User = 
                                 if func_args.get("monthly_income") is not None:
                                     current_state["monthly_income"] = func_args["monthly_income"]
 
+                                # For rent_vs_buy, we directly construct the narrative and exit the tool loop
+                                final_assistant_response_text_buffer.clear()
+                                data = result["result"]
+                                final_narrative = build_rent_vs_buy_narrative(data, current_state)
+                                final_assistant_response_text_buffer.append(final_narrative)
+                                exit_tool_loop = True  # Set flag to break outer loop
 
-                        # Format result
-                        formatted_result = mortgage_service.format_function_result(func_name, result)
-
-                        conversations[conversation_id].append({"role": "assistant", "content": formatted_result})
-                        conversations[conversation_id].append({"role": "assistant", "content": f"__STATE__{json.dumps(current_state)}"})
-
-                        if func_name == "rent_vs_buy":
-                            # Construct the final narrative directly for rent_vs_buy
-                            data = result["result"]
-                            recommendation = data['recommendation'].upper()
-                            final_narrative = (
-    "Let's cut straight to the chase on **Rent vs. Buy**. Based on the numbers, here's what stands out:\n\n"
-
-    "🏠 Renting\n"
-    f"- You’re currently paying AED {data['monthly_rent']:,.2f} per month.\n"
-    f"- That’s **AED {data['annual_rent']:,.2f} per year.\n"
-    f"- Over just 5 years, you will pay AED {data['annual_rent'] * 5:,.2f} to a landlord.\n"
-    "- This builds zero personal equity— a significant opportunity cost.\n\n"
-    "\n"
-
-
-    "🏡 Buying\n"
-    f"- Estimated monthly mortgage: AED {data['monthly_mortgage']:,.2f}\n"
-    f"- Estimated maintenance cost: AED {data['maintenance_fee']:,.2f}\n"
-    f"- **Total monthly buying cost:AED {data['total_monthly_buying']:,.2f}\n"
-    f"- Your monthly income is AED {current_state.get('monthly_income', 0):,.2f}, "
-    "which means buying would consume a substantial portion of your income.\n\n"
-"\n"
-
-    "✅ Recommendation\n"
-    f"- Based purely on monthly cash flow,{data['recommendation'].upper()}ING is the more financially prudent option right now.\n"
-    f"- The difference is approximately AED {abs(data['monthly_difference']):,.2f} per month.\n"
-    f"- If you continue {data['recommendation'].lower()}ing, this amount could instead be invested or saved to build wealth.\n\n"
-"\n"
-
-    "🔍 Next Steps\n"
-    "- What property price range would feel more comfortable for you?\n"
-    "- Should we adjust the loan amount to reduce the monthly mortgage?\n"
-    "- Would you like to explore different interest rates or loan tenures?\n"
-)
-
-                            final_assistant_response_text_buffer.append(final_narrative)
-                            exit_tool_loop = True  # Set flag to break outer loop
-                            break  # Break from inner for loop
+                                # Add a soft close message after the rent vs buy narrative
+                                if current_state.get("monthly_income") is not None and current_state.get("max_loan") is not None:
+                                    monthly_income_formatted = f"{current_state['monthly_income']:,}"
+                                    max_loan_formatted = f"{current_state['max_loan']:,}"
+                                    soft_close_message = (
+                                        f"\n\nBased on your monthly income of AED {monthly_income_formatted} and our analysis, "
+                                        f"you are pre-qualified for a home loan of up to AED {max_loan_formatted} "
+                                        f"in key areas across the UAE. Shall I generate your Pre-Approval Certificate now?"
+                                    )
+                                    final_assistant_response_text_buffer.append(soft_close_message)
+                                break # Break from inner for loop, as rent_vs_buy is a terminal tool
+                            
+                            # For all other tools, format result and add to conversation history
+                            else:
+                                formatted_result = mortgage_service.format_function_result(func_name, result)
+                                conversations[conversation_id].append({"role": "assistant", "content": formatted_result})
+                                conversations[conversation_id].append({"role": "assistant", "content": f"__STATE__{json.dumps(current_state)}"})
 
                     if exit_tool_loop:
                         break  # Break from outer while loop if terminal tool executed
@@ -507,9 +563,8 @@ async def chat_endpoint(chat_message: ChatMessage, current_user: schemas.User = 
             # Stream the final consolidated natural language response to the frontend
             final_response_text = " ".join(final_assistant_response_text_buffer).strip()
             if final_response_text:
-                for char in final_response_text:
-                    yield char
-                # The final response should already be in conversations due to initial_text handling
+                for line in final_response_text.split('\n'):
+                    yield line + '\n'
 
             yield f"\n\n[CONVERSATION_ID:{conversation_id}]"
 
