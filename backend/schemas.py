@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, EmailStr, Field
 
 class UserBase(BaseModel):
@@ -31,6 +31,7 @@ class UserInDBBase(UserBase):
 class DocumentBase(BaseModel):
     file_name: str
     file_type: Optional[str] = None
+    extracted_salary_data: Optional[Dict[str, Any]] = None # New field to store extracted salary details
 
 class DocumentCreate(DocumentBase):
     pass

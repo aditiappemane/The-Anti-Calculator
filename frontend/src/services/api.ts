@@ -4,6 +4,8 @@
 
 import axios from 'axios';
 
+import { ConversationHistoryResponse } from '../types';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const api = axios.create({
@@ -62,8 +64,8 @@ export const chatStream = async (message: string, conversationId: string | null)
   return reader;
 };
 
-export const getConversationHistory = async (conversationId: string): Promise<any[]> => {
-  const response = await api.get(`/api/conversation/${conversationId}`);
+export const getConversationHistory = async (conversationId: string): Promise<ConversationHistoryResponse> => {
+  const response = await api.get<ConversationHistoryResponse>(`/api/conversation/${conversationId}`);
   return response.data;
 };
 

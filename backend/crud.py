@@ -82,6 +82,7 @@ def create_user_document(db: Session, document: schemas.DocumentCreate, owner_id
         file_name=document.file_name,
         file_path=file_path,
         file_type=document.file_type,
+        extracted_salary_data=document.extracted_salary_data, # Added this line
         owner_id=owner_id,
     )
     db.add(db_document)

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, DateTime, JSON # Added JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -26,6 +26,7 @@ class UserDocument(Base):
     file_name = Column(String, nullable=False)
     file_path = Column(String, nullable=False)  # Path where document is stored
     file_type = Column(String, nullable=True)
+    extracted_salary_data = Column(JSON, nullable=True) # New field
     owner_id = Column(Integer, ForeignKey("users.id"))
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
 

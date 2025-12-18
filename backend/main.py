@@ -8,11 +8,13 @@ import logging
 import uuid
 import re # Import re for regex operations
 from typing import Dict, List, Optional, Any
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends # Added UploadFile, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import tempfile # Added tempfile
+from backend.services.vision_service import VisionService # Added VisionService import
 
 # Helper to extract state from messages
 def extract_state_from_messages(msgs: List[Dict[str, str]]) -> Dict[str, Any]:
@@ -73,6 +75,7 @@ app.add_middleware(
 # Initialize services
 gemini_client = GeminiClient()
 mortgage_service = MortgageService()
+vision_service = VisionService() # Initialize VisionService
 
 # In-memory storage for conversations (for demonstration purposes)
 conversations: Dict[str, List[Dict[str, str]]] = {}
@@ -94,6 +97,73 @@ class LeadCapture(BaseModel):
 async def root():
     """Health check endpoint."""
     return {"status": "ok", "message": "AI Mortgage Advisor API"}
+
+
+from backend.auth import get_current_user # Import get_current_user
+from backend.database import get_db # Import get_db
+from sqlalchemy.orm import Session # Import Session
+
+@app.post("/api/upload-salary-slip", response_model=schemas.Document) # Changed response_model
+async def upload_salary_slip(
+    file: UploadFile = File(...),
+    current_user: schemas.User = Depends(get_current_user),
+    db: Session = Depends(get_db) # Added DB Session dependency
+):
+    """
+    Uploads a salary slip (image or PDF) for financial data extraction using Gemini Vision.
+    The file is processed ephemerally and not stored persistently.
+    """
+    # Security: Define allowed file types and maximum size to prevent abuse
+    ALLOWED_CONTENT_TYPES = ["image/jpeg", "image/png", "application/pdf"]
+    MAX_FILE_SIZE_MB = 5
+    MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+
+    if file.content_type not in ALLOWED_CONTENT_TYPES:
+        logger.warning(f"Invalid file type uploaded: {file.content_type}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Only JPEG, PNG images, and PDF documents are allowed (received {file.content_type})."
+        )
+
+    # Security: Read file in chunks to prevent large file attacks and memory exhaustion
+    # and to check size before full load
+    file_contents = b""
+    while chunk := await file.read(8192): # Read in 8KB chunks
+        file_contents += chunk
+        if len(file_contents) > MAX_FILE_SIZE_BYTES:
+            logger.warning(f"File size exceeded limit: {file.filename}")
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size is {MAX_FILE_SIZE_MB}MB."
+            )
+
+    # Security: Use temporary file for ephemeral storage, deleted after processing
+    # This prevents persistent storage of sensitive user documents.
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file.filename.split('.')[-1]}") as temp_file:
+        temp_file.write(file_contents)
+        temp_file_path = temp_file.name
+    
+    logger.info(f"Temporary file created for processing: {temp_file_path}")
+
+    try:
+        # Pass the temporary file path and content type to the vision service
+        extracted_data = await vision_service.extract_financial_data(temp_file_path, file.content_type)
+        
+        # Create a new document entry in the database with extracted data
+        document_create = schemas.DocumentCreate(
+            file_name=file.filename,
+            file_type=file.content_type,
+            extracted_salary_data=extracted_data # Store the extracted data
+        )
+        db_document = crud.create_user_document(db, document=document_create, owner_id=current_user.id, file_path=file.filename)
+        
+        return db_document
+    finally:
+        # Security: Ensure the temporary file is deleted even if processing fails
+        os.remove(temp_file_path)
+        logger.info(f"Temporary file deleted: {temp_file_path}")
+
+
 
 
 @app.post("/api/chat")

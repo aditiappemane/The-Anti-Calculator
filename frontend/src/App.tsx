@@ -9,6 +9,7 @@ import { useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import ProfilePage from './pages/ProfilePage';
+import UploadSalarySlipPage from './pages/UploadSalarySlipPage';
 
 interface Message {
   id: number;
@@ -66,10 +67,15 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const loadConversationHistory = async (id: string) => {
-    try {
-      const response = await getConversationHistory(id);
-      const historyMessages = response.messages; // Access the messages array
+interface ConversationHistoryResponse {
+  conversation_id: string;
+  messages: Array<any>; // Using any for now, could be more specific with backend schemas
+}
+
+const loadConversationHistory = async (id: string) => {
+  try {
+    const response: ConversationHistoryResponse = await getConversationHistory(id);
+    const historyMessages = response.messages; // Access the messages array
       const formattedMessages: Message[] = historyMessages.map((msg: any, index: number) => ({
         id: index,
         text: msg.content,
@@ -220,7 +226,7 @@ function App() {
 
   // Main chat UI rendered if authenticated
   const chatUI = (
-    <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex flex-col h-screen bg-gradient-to-br from-blue-100 to-purple-200 dark:from-gray-800 dark:to-gray-900">
       {/* Header */}
       <div className="flex-shrink-0 bg-white dark:bg-gray-800 shadow-md p-4 flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">AI Mortgage Advisor</h1>
@@ -228,6 +234,11 @@ function App() {
           {token && (
             <a href="/profile" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-600">
               Profile
+            </a>
+          )}
+          {token && (
+            <a href="/upload-salary-slip" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-600">
+              Upload Salary Slip
             </a>
           )}
           {!token && (
@@ -304,6 +315,14 @@ function App() {
         element={
           <ProtectedRoute>
             <ProfilePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/upload-salary-slip"
+        element={
+          <ProtectedRoute>
+            <UploadSalarySlipPage />
           </ProtectedRoute>
         }
       />

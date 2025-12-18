@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchUserProfile, updateUserProfile, uploadDocument, fetchUserDocuments, deleteDocument } from '../services/profile';
 import { User, Document } from '../types';
+import SalarySummaryCard from '../components/SalarySummaryCard'; // Import the SalarySummaryCard
 
 const ProfilePage: React.FC = () => {
   const { user, logout } = useAuth();
@@ -203,19 +204,33 @@ const ProfilePage: React.FC = () => {
           {documents.length === 0 ? (
             <p className="text-gray-600 dark:text-gray-400">No documents uploaded yet.</p>
           ) : (
-            <ul className="space-y-2">
+            <div className="space-y-4">
               {documents.map((doc) => (
-                <li key={doc.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-md">
-                  <span className="text-gray-800 dark:text-gray-200">{doc.file_name} ({doc.file_type})</span>
-                  <button
-                    onClick={() => handleDocumentDelete(doc.id)}
-                    className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-600 ml-4"
-                  >
-                    Delete
-                  </button>
-                </li>
+                <div key={doc.id} className="bg-gray-50 dark:bg-gray-700 p-4 rounded-md shadow-sm">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-gray-800 dark:text-gray-200 font-semibold">{doc.file_name}</span>
+                    <button
+                      onClick={() => handleDocumentDelete(doc.id)}
+                      className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-600 ml-4"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                    Uploaded on: {new Date(doc.uploaded_at).toLocaleDateString()}
+                  </p>
+                  {doc.extracted_salary_data && (
+                    <SalarySummaryCard
+                      basicSalary={doc.extracted_salary_data.basic_salary}
+                      allowances={doc.extracted_salary_data.allowances}
+                      deductions={doc.extracted_salary_data.deductions}
+                      netSalary={doc.extracted_salary_data.net_salary}
+                      hideDetails={true}
+                    />
+                  )}
+                </div>
               ))}
-            </ul>
+            </div>
           )}
         </div>
       </div>

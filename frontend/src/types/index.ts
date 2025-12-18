@@ -42,11 +42,19 @@ export interface UserUpdate {
   phone_number?: string;
 }
 
+export interface ExtractedSalaryData {
+  basic_salary: number;
+  allowances?: Record<string, number>;
+  deductions?: number;
+  net_salary: number;
+}
+
 export interface Document {
   id: number;
   file_name: string;
   file_path: string;
   file_type?: string;
+  extracted_salary_data?: ExtractedSalaryData; // Use the new interface here
   owner_id: number;
   uploaded_at: string;
 }
@@ -54,5 +62,10 @@ export interface Document {
 export interface Token {
   access_token: string;
   token_type: string;
+}
+
+export interface ConversationHistoryResponse {
+  conversation_id: string;
+  messages: Array<any>; // Content of messages can be further refined if needed
 }
 

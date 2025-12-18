@@ -38,88 +38,98 @@ const SignupPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
-      <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-md w-full max-w-md">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 text-center">Sign Up</h2>
-        {error && <p className="text-red-500 text-center mb-4">{error}</p>}
-        {success && <p className="text-green-500 text-center mb-4">{success}</p>}
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-400 to-purple-600 p-4">
+      <header className="w-full max-w-md text-center mb-8">
+        <h1 className="text-5xl font-extrabold text-white drop-shadow-lg">AI Mortgage Advisor</h1>
+        <p className="text-white text-opacity-80 mt-2 text-lg">Create your account to unlock personalized advice</p>
+      </header>
+      <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700 transform hover:scale-105 transition-transform duration-300">
+        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-8 text-center">Create Your Account</h2>
+        {error && <p className="text-red-500 text-center mb-4 text-sm font-medium">{error}</p>}
+        {success && <p className="text-green-500 text-center mb-4 text-sm font-medium">{success}</p>}
         <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2" htmlFor="email">
-              Email
+          <div className="mb-5">
+            <label className="block text-gray-700 dark:text-gray-300 text-sm font-semibold mb-2" htmlFor="email">
+              Email Address
             </label>
             <input
               type="email"
               id="email"
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white dark:border-gray-600"
+              className="shadow-sm appearance-none border border-gray-300 rounded-lg w-full py-3 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:focus:ring-blue-400"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              placeholder="your.email@example.com"
             />
           </div>
-          <div className="mb-4">
-            <label className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2" htmlFor="password">
+          <div className="mb-5">
+            <label className="block text-gray-700 dark:text-gray-300 text-sm font-semibold mb-2" htmlFor="password">
               Password
             </label>
             <input
               type="password"
               id="password"
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white dark:border-gray-600"
+              className="shadow-sm appearance-none border border-gray-300 rounded-lg w-full py-3 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:focus:ring-blue-400"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              placeholder="••••••••"
             />
           </div>
-          <div className="mb-4">
-            <label className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2" htmlFor="firstName">
+          <div className="mb-5">
+            <label className="block text-gray-700 dark:text-gray-300 text-sm font-semibold mb-2" htmlFor="firstName">
               First Name
             </label>
             <input
               type="text"
               id="firstName"
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white dark:border-gray-600"
+              className="shadow-sm appearance-none border border-gray-300 rounded-lg w-full py-3 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:focus:ring-blue-400"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
+              placeholder="John"
             />
           </div>
-          <div className="mb-4">
-            <label className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2" htmlFor="lastName">
+          <div className="mb-5">
+            <label className="block text-gray-700 dark:text-gray-300 text-sm font-semibold mb-2" htmlFor="lastName">
               Last Name
             </label>
             <input
               type="text"
               id="lastName"
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white dark:border-gray-600"
+              className="shadow-sm appearance-none border border-gray-300 rounded-lg w-full py-3 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:focus:ring-blue-400"
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
+              placeholder="Doe"
             />
           </div>
           <div className="mb-6">
-            <label className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2" htmlFor="phoneNumber">
+            <label className="block text-gray-700 dark:text-gray-300 text-sm font-semibold mb-2" htmlFor="phoneNumber">
               Phone Number
             </label>
             <input
               type="text"
               id="phoneNumber"
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white dark:border-gray-600"
+              className="shadow-sm appearance-none border border-gray-300 rounded-lg w-full py-3 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:focus:ring-blue-400"
               value={phoneNumber}
               onChange={(e) => setPhoneNumber(e.target.value)}
+              placeholder="+971 50 123 4567"
             />
           </div>
-          <div className="flex items-center justify-between">
-            <button
-              type="submit"
-              className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline dark:bg-green-600 dark:hover:bg-green-800"
-            >
-              Sign Up
-            </button>
+          <button
+            type="submit"
+            className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:bg-green-700 dark:hover:bg-green-800 dark:focus:ring-green-600 transition-all duration-300 transform hover:-translate-y-0.5"
+          >
+            Sign Up
+          </button>
+          <p className="text-center text-gray-600 dark:text-gray-400 text-sm mt-6">
+            Already have an account? {' '}
             <a
               href="/login"
-              className="inline-block align-baseline font-bold text-sm text-blue-500 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-600"
+              className="font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 transition-colors duration-200"
             >
-              Already have an account? Login
+              Login Here
             </a>
-          </div>
+          </p>
         </form>
       </div>
     </div>
